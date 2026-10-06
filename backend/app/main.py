@@ -2,26 +2,38 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.config import get_settings
 from app.database import Base, engine, async_session
+from app.metrics import setup_metrics
 from app.models.station import Station  # noqa: F401 — ensures table is registered
 from app.routers import auth, users, plants, devices, sensors, commands, alerts, watering, catalog, ws, stations
 from app.services.seed import seed_default_plants, seed_test_account
 
 settings = get_settings()
 
+# Identifiant arbitraire du verrou PostgreSQL pris au démarrage
+STARTUP_LOCK_KEY = 424242
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup : créer les tables et insérer les données par défaut
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Startup : créer les tables et insérer les données par défaut.
+    # Un verrou PostgreSQL (advisory lock) sérialise cette étape quand plusieurs répliques
+    # de l'API démarrent en même temps (Kubernetes) : une seule initialise la base à la fois.
+    async with engine.connect() as lock_conn:
+        await lock_conn.execute(text("SELECT pg_advisory_lock(:key)"), {"key": STARTUP_LOCK_KEY})
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
 
-    async with async_session() as db:
-        await seed_default_plants(db)
-        if settings.SEED_DEMO_ACCOUNT:
-            await seed_test_account(db)
+            async with async_session() as db:
+                await seed_default_plants(db)
+                if settings.SEED_DEMO_ACCOUNT:
+                    await seed_test_account(db)
+        finally:
+            await lock_conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": STARTUP_LOCK_KEY})
 
     yield
 
@@ -43,6 +55,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+setup_metrics(app)
 
 app.include_router(auth.router)
 app.include_router(users.router)

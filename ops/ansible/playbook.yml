@@ -1,0 +1,125 @@
+# Prépare la plateforme DevOps de SECOMO sur la machine locale (WSL / Linux avec Docker) :
+#   - outils kubectl et k3d,
+#   - cluster Kubernetes k3s (via k3d) exposé sur http://localhost:8081,
+#   - secrets de l'application générés une fois et stockés hors du dépôt,
+#   - Jenkins configuré en code, avec le job du pipeline déjà créé.
+#
+# Idempotent : le relancer ne refait que ce qui manque. Aucun droit administrateur requis.
+#   ansible-playbook -i ops/ansible/inventory.ini ops/ansible/playbook.yml
+- name: Plateforme DevOps SECOMO
+  hosts: local
+  gather_facts: false
+
+  vars:
+    repo_dir: "{{ playbook_dir }}/../.."
+    bin_dir: "{{ lookup('env', 'HOME') }}/.local/bin"
+    secrets_dir: "{{ lookup('env', 'HOME') }}/.secomo"
+    kubectl_version: v1.37.1
+    k3d_version: v5.9.0
+    cluster_name: secomo
+    jenkins_port: 8090
+    # Secrets générés au premier passage puis relus (fichiers hors du dépôt Git)
+    postgres_password: "{{ lookup('password', secrets_dir + '/postgres_password length=24 chars=ascii_letters,digits') }}"
+    secret_key: "{{ lookup('password', secrets_dir + '/secret_key length=48 chars=ascii_letters,digits') }}"
+    grafana_password: "{{ lookup('password', secrets_dir + '/grafana_admin_password length=20 chars=ascii_letters,digits') }}"
+    jenkins_password: "{{ lookup('password', secrets_dir + '/jenkins_admin_password length=20 chars=ascii_letters,digits') }}"
+
+  tasks:
+    - name: Vérifier que Docker répond
+      ansible.builtin.command: docker info --format "{{ '{{' }}.ServerVersion{{ '}}' }}"
+      changed_when: false
+
+    - name: Créer le dossier des outils
+      ansible.builtin.file:
+        path: "{{ bin_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Installer kubectl {{ kubectl_version }}
+      ansible.builtin.get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+        dest: "{{ bin_dir }}/kubectl"
+        mode: "0755"
+
+    - name: Installer k3d {{ k3d_version }}
+      ansible.builtin.get_url:
+        url: "https://github.com/k3d-io/k3d/releases/download/{{ k3d_version }}/k3d-linux-amd64"
+        dest: "{{ bin_dir }}/k3d"
+        mode: "0755"
+
+    - name: Le cluster existe-t-il ?
+      ansible.builtin.command: "{{ bin_dir }}/k3d cluster get {{ cluster_name }}"
+      register: cluster
+      changed_when: false
+      failed_when: false
+
+    - name: Créer le cluster Kubernetes (k3s dans Docker)
+      ansible.builtin.command: >-
+        {{ bin_dir }}/k3d cluster create {{ cluster_name }}
+        --port "8081:80@loadbalancer" --wait
+      when: cluster.rc != 0
+
+    - name: Créer le namespace de l'application
+      ansible.builtin.shell: >-
+        {{ bin_dir }}/kubectl create namespace secomo --dry-run=client -o yaml
+        | {{ bin_dir }}/kubectl apply -f -
+      register: ns
+      changed_when: "'created' in ns.stdout"
+
+    - name: Créer les secrets de l'application dans Kubernetes
+      ansible.builtin.shell: >-
+        {{ bin_dir }}/kubectl create secret generic secomo-secrets -n secomo
+        --from-literal=POSTGRES_USER=secomo
+        --from-literal=POSTGRES_PASSWORD={{ postgres_password }}
+        --from-literal=DATABASE_URL=postgresql+asyncpg://secomo:{{ postgres_password }}@postgres:5432/secomo
+        --from-literal=SECRET_KEY={{ secret_key }}
+        --from-literal=GRAFANA_ADMIN_PASSWORD={{ grafana_password }}
+        --dry-run=client -o yaml | {{ bin_dir }}/kubectl apply -f -
+      register: secret
+      changed_when: "'unchanged' not in secret.stdout"
+      no_log: true
+
+    - name: Construire l'image Jenkins
+      ansible.builtin.command: docker build -q -t secomo-jenkins:latest {{ repo_dir }}/ops/jenkins
+      register: jenkins_image
+      changed_when: false
+
+    - name: Groupe propriétaire du socket Docker
+      ansible.builtin.stat:
+        path: /var/run/docker.sock
+      register: docker_sock
+
+    - name: Jenkins tourne-t-il déjà ?
+      ansible.builtin.command: docker inspect -f "{{ '{{' }}.State.Running{{ '}}' }}" secomo-jenkins
+      register: jenkins_state
+      changed_when: false
+      failed_when: false
+
+    - name: Démarrer Jenkins
+      ansible.builtin.command: >-
+        docker run -d --name secomo-jenkins --restart unless-stopped --network host
+        --group-add {{ docker_sock.stat.gid }}
+        -v secomo-jenkins-home:/var/jenkins_home
+        -v /var/run/docker.sock:/var/run/docker.sock
+        -v {{ lookup('env', 'HOME') }}/.kube/config:/kube/config:ro
+        -e KUBECONFIG=/kube/config
+        -e JENKINS_OPTS=--httpPort={{ jenkins_port }}
+        -e JENKINS_ADMIN_PASSWORD={{ jenkins_password }}
+        secomo-jenkins:latest
+      when: jenkins_state.rc != 0
+      no_log: true
+
+    - name: Attendre que Jenkins réponde
+      ansible.builtin.uri:
+        url: "http://localhost:{{ jenkins_port }}/login"
+      register: jenkins_up
+      until: jenkins_up.status == 200
+      retries: 30
+      delay: 5
+
+    - name: Récapitulatif
+      ansible.builtin.debug:
+        msg:
+          - "Jenkins : http://localhost:{{ jenkins_port }} (admin, mot de passe dans {{ secrets_dir }}/jenkins_admin_password)"
+          - "Application, après le premier build : http://localhost:8081"
+          - "Grafana : http://localhost:8081/grafana"

@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: secomo
+data:
+  CORS_ORIGINS: '["http://localhost:8081"]'
+  SEED_DEMO_ACCOUNT: "true"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: secomo
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: backend }
+  template:
+    metadata:
+      labels: { app: backend }
+      annotations:
+        # Prometheus découvre et collecte automatiquement les pods annotés
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+    spec:
+      # Attendre que PostgreSQL accepte les connexions avant de démarrer l'API
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          command: ["sh", "-c", "until pg_isready -h postgres -p 5432; do sleep 2; done"]
+      containers:
+        - name: backend
+          image: secomo-backend:IMAGE_TAG
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef: { name: backend-config }
+          env:
+            - name: SECRET_KEY
+              valueFrom: { secretKeyRef: { name: secomo-secrets, key: SECRET_KEY } }
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: secomo-secrets, key: DATABASE_URL } }
+          readinessProbe:
+            httpGet: { path: /api/health, port: 8000 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /api/health, port: 8000 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 384Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: secomo
+spec:
+  selector: { app: backend }
+  ports:
+    - port: 8000

@@ -1,0 +1,129 @@
+# Prometheus : découvre les pods annotés prometheus.io/scrape et évalue les règles d'alerte
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: secomo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prometheus
+  namespace: secomo
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus
+  namespace: secomo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: secomo
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: secomo
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    rule_files:
+      - /etc/prometheus/alerts.yml
+    scrape_configs:
+      - job_name: secomo-pods
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [secomo]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            regex: (.+);(.+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+  alerts.yml: |
+    groups:
+      - name: secomo
+        rules:
+          - alert: ApiIndisponible
+            expr: up{app="backend"} == 0
+            for: 1m
+            labels: { severity: critical }
+            annotations:
+              summary: "Un pod de l'API SECOMO ne répond plus depuis 1 minute"
+          - alert: TauxErreursEleve
+            expr: sum(rate(secomo_http_requests_total{status=~"5.."}[5m])) / sum(rate(secomo_http_requests_total[5m])) > 0.05
+            for: 5m
+            labels: { severity: warning }
+            annotations:
+              summary: "Plus de 5 % des requêtes de l'API échouent (erreurs 5xx)"
+          - alert: AucuneMesureRecue
+            expr: sum(increase(secomo_readings_received_total[15m])) == 0
+            for: 15m
+            labels: { severity: warning }
+            annotations:
+              summary: "Aucune mesure reçue des ESP32 depuis 15 minutes"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: secomo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: prometheus }
+  template:
+    metadata:
+      labels: { app: prometheus }
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.1.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.retention.time=2d
+          ports:
+            - containerPort: 9090
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 384Mi }
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: secomo
+spec:
+  selector: { app: prometheus }
+  ports:
+    - port: 9090

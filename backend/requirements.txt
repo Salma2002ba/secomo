@@ -7,3 +7,4 @@ pydantic[email]==2.10.4
 pydantic-settings==2.7.1
 python-jose[cryptography]==3.3.0
 bcrypt==5.0.0
+prometheus-client==0.21.1

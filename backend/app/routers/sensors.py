@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.metrics import ALERTS_CREATED, READINGS_RECEIVED
 from app.models.device import Device
 from app.models.sensor_reading import SensorReading
 from app.models.user import User
@@ -46,6 +47,7 @@ async def post_reading(
 ):
     reading = SensorReading(device_id=device.id, **body.model_dump())
     db.add(reading)
+    READINGS_RECEIVED.inc()
 
     # Mettre à jour le statut online du device
     device.is_online = True
@@ -67,6 +69,8 @@ async def post_reading(
 
     # 2. Évaluer les seuils → générer des alertes
     alerts = await evaluate_reading(device, reading, db)
+    for alert in alerts:
+        ALERTS_CREATED.labels(alert.type, alert.category).inc()
     for alert in alerts:
         await ws_manager.broadcast_to_device_owner(
             user_id=device.user_id,

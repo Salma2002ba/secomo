@@ -13,6 +13,17 @@
   <img src="https://img.shields.io/badge/Docker_Compose-2496ED?logo=docker&logoColor=white" alt="Docker Compose">
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/CI%2FCD-Jenkins-D24939?logo=jenkins&logoColor=white" alt="Jenkins">
+  <img src="https://img.shields.io/badge/Kubernetes-k3s-326CE5?logo=kubernetes&logoColor=white" alt="Kubernetes">
+  <img src="https://img.shields.io/badge/Ansible-EE0000?logo=ansible&logoColor=white" alt="Ansible">
+  <img src="https://img.shields.io/badge/Prometheus-E6522C?logo=prometheus&logoColor=white" alt="Prometheus">
+  <img src="https://img.shields.io/badge/Grafana-F46800?logo=grafana&logoColor=white" alt="Grafana">
+  <img src="https://img.shields.io/badge/Loki-logs-F46800?logo=grafana&logoColor=white" alt="Loki">
+  <img src="https://img.shields.io/badge/Trivy-1904DA?logo=aqua&logoColor=white" alt="Trivy">
+  <img src="https://img.shields.io/badge/tests-pytest-0A9EDC?logo=pytest&logoColor=white" alt="pytest">
+</p>
+
 # SECOMO — Serre Connectée Modulaire
 
 Un système complet pour **surveiller et piloter une serre** : un ESP32 lit les capteurs et
@@ -24,6 +35,7 @@ l'arrosage, un **dashboard React** affiche tout en temps réel par WebSocket.
 | **7** grandeurs mesurées (air, sol, lumière, pH, eau, batterie) | **6** actionneurs pilotés à distance (pompes, vannes, ventilateur, LED) |
 | **37** routes d'API REST + 1 WebSocket temps réel | **5 515** plantes dans le catalogue intégré |
 | Alertes et arrosage **automatiques** selon chaque plante | Plateforme complète en **une commande** Docker |
+| Déploiement continu **Jenkins → Kubernetes** | **Observabilité** : métriques Prometheus, logs Loki, Grafana |
 
 ## Sommaire
 
@@ -35,7 +47,7 @@ l'arrosage, un **dashboard React** affiche tout en temps réel par WebSocket.
 - [Le firmware ESP32](#le-firmware-esp32)
 - [Structure du dépôt](#structure-du-dépôt)
 - [Documentation](#documentation)
-- [Feuille de route DevOps](#feuille-de-route-devops)
+- [Chaîne DevOps : Ansible, Jenkins, Kubernetes, monitoring](#chaîne-devops--ansible-jenkins-kubernetes-monitoring)
 
 ---
 
@@ -245,6 +257,13 @@ pio device monitor                       # 115200 bauds
 ├── esp32/
 │   ├── src/                 Firmware C++ (PlatformIO)
 │   └── tools/               Simulateur d'ESP32, moniteur série, générateur de QR codes
+├── k8s/                     Manifestes Kubernetes : PostgreSQL, API, dashboard, Ingress
+│   └── monitoring/          Prometheus (règles d'alerte), Loki + Alloy (logs), Grafana (tableau de bord provisionné)
+├── ops/
+│   ├── ansible/             Playbook qui prépare la plateforme (k3d, secrets, Jenkins)
+│   ├── jenkins/             Image Jenkins configurée en code (plugins, compte, job)
+│   └── deploy.sh            Déploiement sur le cluster
+├── Jenkinsfile              Pipeline CI/CD
 ├── docs/                    Notice utilisateur, cahier des charges embarqué, déploiement
 ├── docker-compose.yml       Base + API + dashboard en local
 └── .env.example             Variables à copier dans .env
@@ -257,15 +276,130 @@ pio device monitor                       # 115200 bauds
   protocole, modes dégradés.
 - [Déploiement du backend](docs/deploiement-backend.md) : variables d'environnement et hébergement.
 
-## Feuille de route DevOps
+## Chaîne DevOps : Ansible, Jenkins, Kubernetes, monitoring
 
-La suite du projet industrialise la plateforme :
+Toute la chaîne tourne sur un poste Linux ou WSL : une fois Docker et Ansible installés, aucun droit
+administrateur n'est nécessaire.
 
-- [ ] Tests automatisés de l'API
-- [ ] Pipeline CI/CD **Jenkins** : tests, build des images, scan de sécurité, déploiement
-- [ ] Déploiement sur **Kubernetes**
-- [ ] Préparation des machines avec **Ansible**
-- [ ] **Monitoring** : métriques Prometheus, tableaux de bord Grafana, alertes
+```mermaid
+flowchart LR
+    dev(["git push"]):::trigger
+
+    subgraph prep["① Ansible prépare la plateforme"]
+        direction TB
+        a1["kubectl + k3d"]:::ops
+        a2["cluster Kubernetes k3s"]:::ops
+        a3["secrets générés"]:::ops
+        a4["Jenkins configuré en code"]:::ops
+    end
+
+    subgraph ci["② Pipeline Jenkins"]
+        direction TB
+        j1["build des images"]:::ci
+        j2["scan Trivy"]:::ci
+        j3["déploiement"]:::ci
+        j4["tests d'intégration<br/>contre le cluster"]:::ci
+        j1 --> j2 --> j3 --> j4
+    end
+
+    subgraph k8s["③ Kubernetes · namespace secomo"]
+        direction TB
+        ing["Ingress Traefik<br/>localhost:8081"]:::k8s
+        api["API × 2 répliques<br/>sondes + /metrics"]:::k8s
+        front["Dashboard"]:::k8s
+        pg[("PostgreSQL<br/>volume persistant")]:::k8s
+        ing --> api & front
+        api --> pg
+    end
+
+    subgraph mon["④ Monitoring"]
+        direction TB
+        prom["Prometheus<br/>métriques · alertes"]:::mon
+        loki["Loki ← Alloy<br/>logs des pods"]:::mon
+        graf["Grafana<br/>tableau de bord"]:::mon
+        prom --> graf
+        loki --> graf
+    end
+
+    prep -.-> ci
+    dev --> j1
+    j3 --> ing
+    prom -- "collecte /metrics" --> api
+
+    classDef trigger fill:#1a1a1c,stroke:#8b8b94,color:#f0ede8
+    classDef ops fill:#fde7f0,stroke:#e8397d,color:#1a1a1c
+    classDef ci fill:#fff3e0,stroke:#D24939,color:#1a1a1c
+    classDef k8s fill:#e3f1fc,stroke:#326CE5,color:#1a1a1c
+    classDef mon fill:#e2f7ee,stroke:#29c282,color:#1a1a1c
+```
+
+### ① Ansible : préparer la plateforme
+
+```bash
+ansible-playbook -i ops/ansible/inventory.ini ops/ansible/playbook.yml
+```
+
+Le [playbook](ops/ansible/playbook.yml) installe `kubectl` et `k3d`, crée le cluster Kubernetes,
+génère les secrets de l'application (stockés dans `~/.secomo`, hors du dépôt) et démarre Jenkins.
+Il est **idempotent** : relancé, il ne change rien de ce qui est déjà en place.
+
+### ② Jenkins : intégration et déploiement continus
+
+Jenkins est entièrement **configuré en code** ([`ops/jenkins/`](ops/jenkins/)) : plugins,
+compte administrateur et job du pipeline sont créés au démarrage (Configuration as Code + Job DSL).
+Il surveille la branche `main` et lance le [`Jenkinsfile`](Jenkinsfile) à chaque nouveau commit :
+
+| Étape | Ce qu'elle fait |
+|---|---|
+| Build | Images Docker de l'API et du dashboard, taguées `<build>-<commit>` |
+| Scan Trivy | Vulnérabilités hautes et critiques, rapport archivé avec le build |
+| Déploiement | Import des images dans le cluster, application des manifestes, attente du rollout |
+| Tests | Les 9 tests d'intégration ([`backend/tests`](backend/tests)) tournent contre l'application déployée ; résultats JUnit publiés dans Jenkins |
+
+Jenkins : http://localhost:8090 (compte `admin`, mot de passe dans `~/.secomo/jenkins_admin_password`).
+
+### ③ Kubernetes
+
+| Composant | Objet | Points clés |
+|---|---|---|
+| API | Deployment × 2 | Sondes `readiness` et `liveness` sur `/api/health`, limites CPU et mémoire, attente de la base au démarrage, verrou PostgreSQL pour que deux répliques n'initialisent pas la base en même temps |
+| Dashboard | Deployment | Nginx, fichiers statiques |
+| PostgreSQL | Deployment + PersistentVolumeClaim | Données conservées entre les redéploiements |
+| Configuration | ConfigMap + Secret | Aucun mot de passe dans les manifestes |
+| Accès | Ingress (Traefik) | `/api` vers l'API, `/` vers le dashboard, `/grafana` vers Grafana |
+
+Application : http://localhost:8081 · Swagger : http://localhost:8081/docs
+
+### ④ Monitoring
+
+L'API expose ses métriques sur `/metrics` ([`app/metrics.py`](backend/app/metrics.py)) :
+
+- **techniques** : requêtes par route et par code HTTP, temps de réponse ;
+- **métier** : mesures reçues des ESP32, alertes générées par catégorie.
+
+Prometheus découvre automatiquement les pods annotés et évalue 3 règles d'alerte :
+
+| Alerte | Condition |
+|---|---|
+| `ApiIndisponible` | Un pod de l'API ne répond plus depuis 1 minute |
+| `TauxErreursEleve` | Plus de 5 % d'erreurs 5xx sur 5 minutes |
+| `AucuneMesureRecue` | Aucune mesure des ESP32 depuis 15 minutes |
+
+Les **logs** de tous les pods sont collectés par **Grafana Alloy** (via l'API Kubernetes) et
+stockés dans **Loki**, avec les étiquettes `app`, `pod` et `container` pour filtrer.
+
+Grafana (http://localhost:8081/grafana) est livré avec ses deux sources de données (Prometheus et
+Loki) et son tableau de bord, sans aucune configuration manuelle : métriques et logs côte à côte.
+
+<p align="center">
+  <img src="docs/screenshots/05-grafana.jpg" alt="Tableau de bord Grafana : métriques" width="95%"><br>
+  <b>Métriques</b> : trafic par route, temps de réponse, mesures reçues, alertes par catégorie
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/06-grafana-logs.jpg" alt="Logs de l'API dans Grafana" width="95%"><br>
+  <b>Logs</b> de l'API dans Loki : chaque mesure reçue d'un ESP32, chaque requête
+</p>
 
 ---
 
