@@ -1,0 +1,31 @@
+# Secrets et configuration locale
+.env
+.env.*
+!.env.example
+esp32/src/secrets.h
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+*.egg-info/
+*.log
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# PlatformIO
+.pio/
+
+# QR codes générés
+esp32/tools/QRcode/
+
+# Éditeurs et système
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp

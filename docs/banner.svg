@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="t d">
+  <title id="t">SECOMO – Serre connectée modulaire</title>
+  <desc id="d">Bannière du projet : capteurs ESP32, API FastAPI et dashboard temps réel pour piloter une serre.</desc>
+  <rect width="1200" height="300" rx="18" fill="#0a0a0b"/>
+  <!-- Bande aux couleurs du portfolio -->
+  <rect x="0" y="0" width="400" height="8" fill="#e8397d"/>
+  <rect x="400" y="0" width="400" height="8" fill="#29c282"/>
+  <rect x="800" y="0" width="400" height="8" fill="#3d9fe8"/>
+  <text x="60" y="110" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="3" fill="#3de8a0">IOT · TEMPS RÉEL · AUTOMATISATION</text>
+  <text x="60" y="170" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="50" font-weight="700" fill="#f0ede8">SECOMO<tspan fill="#29c282">.</tspan></text>
+  <text x="60" y="218" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="26" fill="#8b8b94">La serre connectée modulaire : ESP32 · FastAPI · PostgreSQL · React</text>
+  <!-- Pictogramme : une pousse reliée à un capteur -->
+  <g transform="translate(900 55)" fill="none" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M120 170 V95" stroke="#29c282"/>
+    <path d="M120 120 C 80 120, 60 95, 60 60 C 95 60, 120 80, 120 120" stroke="#29c282"/>
+    <path d="M120 100 C 160 100, 185 75, 185 40 C 145 40, 120 65, 120 100" stroke="#3de8a0"/>
+    <path d="M70 170 H170" stroke="#8b8b94"/>
+    <path d="M215 60 a30 30 0 0 1 0 50" stroke="#3d9fe8"/>
+    <path d="M235 45 a50 50 0 0 1 0 80" stroke="#3d9fe8"/>
+    <circle cx="200" cy="85" r="7" stroke="#e8397d"/>
+  </g>
+</svg>

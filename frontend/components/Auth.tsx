@@ -1,0 +1,254 @@
+
+import React from 'react';
+import { t, type Lang } from '../i18n';
+
+interface AuthProps {
+  type: 'login' | 'register';
+  onBack: () => void;
+  onSwitch: () => void;
+  onSuccess: (email: string, password?: string, firstName?: string, lastName?: string, isRegister?: boolean) => void;
+  lang?: Lang;
+}
+
+const Auth: React.FC<AuthProps> = ({ type, onBack, onSwitch, onSuccess, lang = 'FR' as Lang }) => {
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [firstName, setFirstName] = React.useState('');
+  const [lastName, setLastName] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+  React.useEffect(() => { setError(''); setLoading(false); }, [type]);
+  const [showConditions, setShowConditions] = React.useState(false);
+
+  return (
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-6 relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-b from-green-500/5 via-transparent to-transparent pointer-events-none" />
+      <div className="absolute top-0 right-0 w-96 h-96 bg-green-500/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-64 h-64 bg-green-600/5 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="w-full max-w-md relative z-10">
+        <div className="bg-zinc-900/95 backdrop-blur-xl rounded-2xl shadow-2xl shadow-green-950/30 border border-zinc-700/50 p-8 lg:p-10">
+          <button
+            onClick={onBack}
+            className="absolute top-6 left-6 text-zinc-400 hover:text-green-400 transition-colors duration-300 p-1 rounded-lg hover:scale-110"
+            aria-label="Retour"
+          >
+            <i className="fas fa-arrow-left text-lg" />
+          </button>
+
+          <div className="flex items-center gap-3 pt-2 pb-6">
+            <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-700 rounded-xl flex items-center justify-center text-white shadow-lg shadow-green-500/25">
+              <i className="fas fa-leaf text-lg" />
+            </div>
+            <span className="text-xl font-black tracking-tight text-white">SECOMO</span>
+          </div>
+
+          <div className="text-center mb-8">
+            <div className="w-14 h-14 bg-green-500/10 border border-green-500/20 rounded-xl flex items-center justify-center mx-auto mb-5">
+              <i className={`fas ${type === 'login' ? 'fa-lock' : 'fa-user-plus'} text-xl text-green-400`} />
+            </div>
+            <h2 className="text-2xl font-bold text-white tracking-tight">
+              {type === 'login' ? t('auth_login_title', lang) : t('auth_register_title', lang)}
+            </h2>
+            <p className="text-zinc-400 text-sm font-medium mt-2">
+              {type === 'login' ? t('auth_login_subtitle', lang) : t('auth_register_subtitle', lang)}
+            </p>
+          </div>
+
+          <form
+            className="space-y-5"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setError('');
+              setLoading(true);
+              try {
+                if (type === 'register') {
+                  await onSuccess(email, password, firstName, lastName, true);
+                } else {
+                  await onSuccess(email, password);
+                }
+              } catch (err: any) {
+                setError(err.message || 'Erreur de connexion');
+              }
+              setLoading(false);
+            }}
+          >
+            {error && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-medium">
+                <i className="fas fa-circle-exclamation mr-2"></i>{error}
+              </div>
+            )}
+
+            {type === 'register' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 tracking-widest ml-1">{t('auth_firstname', lang)}</label>
+                  <input
+                    type="text"
+                    required
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="Jean"
+                    className="w-full bg-zinc-800 border border-zinc-600 rounded-xl py-3.5 px-4 font-medium text-white outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50 transition-all duration-300 placeholder:text-zinc-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 tracking-widest ml-1">{t('auth_lastname', lang)}</label>
+                  <input
+                    type="text"
+                    required
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Dupont"
+                    className="w-full bg-zinc-800 border border-zinc-600 rounded-xl py-3.5 px-4 font-medium text-white outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50 transition-all duration-300 placeholder:text-zinc-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase text-zinc-400 tracking-widest ml-1">
+                {t('auth_email', lang)}
+              </label>
+              <div className="relative">
+                <i className="fas fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="nom@exemple.com"
+                  className="w-full bg-zinc-800 border border-zinc-600 rounded-xl py-3.5 pl-11 pr-4 font-medium text-white outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50 transition-all duration-300 placeholder:text-zinc-500"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase text-zinc-400 tracking-widest ml-1">
+                {t('auth_password', lang)}
+              </label>
+              <div className="relative">
+                <i className="fas fa-key absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-zinc-800 border border-zinc-600 rounded-xl py-3.5 pl-11 pr-4 font-medium text-white outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50 transition-all duration-300 placeholder:text-zinc-500"
+                />
+              </div>
+            </div>
+
+            {type === 'register' && (
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  required
+                  className="mt-1 w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-green-500 focus:ring-green-500 focus:ring-offset-0 focus:ring-2"
+                />
+                <span className="text-xs text-zinc-400 font-medium">
+                  {t('auth_cgu', lang)}{' '}
+                  <button
+                    type="button"
+                    onClick={() => setShowConditions(true)}
+                    className="text-green-400 font-semibold hover:text-green-300 hover:underline transition-colors"
+                  >
+                    {t('auth_cgu_link', lang)}
+                  </button>
+                  {' '}{t('auth_cgu_suffix', lang)}
+                </span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 text-white font-bold py-3.5 rounded-xl transition-all duration-300 shadow-lg shadow-green-500/25 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 group disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {loading ? (
+                <><i className="fas fa-spinner fa-spin mr-2"></i>{t('auth_connecting', lang)}</>
+              ) : (
+                <>{type === 'login' ? t('auth_login_btn', lang) : t('auth_register_btn', lang)}<i className="fas fa-arrow-right text-sm group-hover:translate-x-1 transition-transform duration-300 opacity-80" /></>
+              )}
+            </button>
+          </form>
+
+          <div className="mt-8 text-center">
+            <p className="text-zinc-400 text-sm font-medium">
+              {type === 'login' ? t('auth_no_account', lang) : t('auth_already_account', lang)}{' '}
+              <button
+                type="button"
+                onClick={onSwitch}
+                className="text-green-400 font-semibold hover:text-green-300 hover:underline transition-colors"
+              >
+                {t('auth_click_here', lang)}
+              </button>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal Conditions générales */}
+      {showConditions && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm"
+          onClick={() => setShowConditions(false)}
+          aria-modal="true"
+          role="dialog"
+          aria-label="Conditions générales d'utilisation"
+        >
+          <div
+            className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl shadow-green-950/30 max-w-lg w-full max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 border-b border-zinc-700">
+              <h3 className="text-lg font-bold text-white">{t('cgu_title', lang)}</h3>
+              <button
+                type="button"
+                onClick={() => setShowConditions(false)}
+                className="p-2 text-zinc-400 hover:text-green-400 rounded-xl transition-colors duration-300 hover:scale-110"
+                aria-label="Fermer"
+              >
+                <i className="fas fa-times text-lg" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1 text-sm text-zinc-400 space-y-4">
+              <p className="font-medium text-zinc-300">
+                Les présentes conditions régissent l'utilisation du prototype SECOMO (POC) dans le cadre du programme Innov 2026.
+              </p>
+              <div>
+                <h4 className="font-semibold text-white mb-1">1. Objet</h4>
+                <p>Ce service est un prototype de démonstration. Il permet de visualiser et piloter des données simulées liées à une serre connectée modulaire.</p>
+              </div>
+              <div>
+                <h4 className="font-semibold text-white mb-1">2. Acceptation</h4>
+                <p>L'accès et l'utilisation du POC impliquent l'acceptation sans réserve des présentes conditions.</p>
+              </div>
+              <div>
+                <h4 className="font-semibold text-white mb-1">3. Données et confidentialité</h4>
+                <p>Les données saisies peuvent être utilisées à des fins de démonstration et d'évaluation du projet SECOMO.</p>
+              </div>
+              <div>
+                <h4 className="font-semibold text-white mb-1">4. Limitation</h4>
+                <p>Le POC est fourni « en l'état ». Les alertes, l'arrosage et les capteurs sont simulés côté interface.</p>
+              </div>
+              <p className="text-xs text-zinc-500 pt-2">Dernière mise à jour : 2026.</p>
+            </div>
+            <div className="p-6 border-t border-zinc-700">
+              <button
+                type="button"
+                onClick={() => setShowConditions(false)}
+                className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 text-white font-bold py-3 rounded-xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                {t('cgu_understood', lang)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Auth;
